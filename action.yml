@@ -1,0 +1,126 @@
+name: Slack Notify
+description: Send a richly-formatted Slack notification from a GitHub Actions workflow
+author: Full Stack House
+
+branding:
+  icon: message-square
+  color: purple
+
+inputs:
+  bot-token:
+    description: Slack bot token (xoxb-…). Mutually exclusive with webhook-url.
+    required: false
+  webhook-url:
+    description: Slack incoming webhook URL. Mutually exclusive with bot-token.
+    required: false
+  channel:
+    description: Slack channel (e.g. "#fsh-alerts"). Required when using bot-token; ignored for webhook-url.
+    required: false
+  title:
+    description: Notification title (shown as a header block).
+    required: true
+  message:
+    description: Notification body (mrkdwn).
+    required: true
+  status:
+    description: One of "success", "failure", "info" (default). Controls header emoji.
+    required: false
+    default: info
+
+runs:
+  using: composite
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        BOT_TOKEN: ${{ inputs.bot-token }}
+        WEBHOOK_URL: ${{ inputs.webhook-url }}
+        CHANNEL: ${{ inputs.channel }}
+      run: |
+        if [[ -z "$BOT_TOKEN" && -z "$WEBHOOK_URL" ]]; then
+          echo "::error::Either bot-token or webhook-url must be provided"
+          exit 1
+        fi
+        if [[ -n "$BOT_TOKEN" && -n "$WEBHOOK_URL" ]]; then
+          echo "::error::bot-token and webhook-url are mutually exclusive"
+          exit 1
+        fi
+        if [[ -n "$BOT_TOKEN" && -z "$CHANNEL" ]]; then
+          echo "::error::channel is required when using bot-token"
+          exit 1
+        fi
+
+    - name: Compute header
+      id: header
+      shell: bash
+      env:
+        STATUS: ${{ inputs.status }}
+        TITLE: ${{ inputs.title }}
+      run: |
+        case "$STATUS" in
+          success) emoji="✅" ;;
+          failure) emoji="❌" ;;
+          *)       emoji="ℹ️" ;;
+        esac
+        echo "text=${emoji} ${TITLE}" >> "$GITHUB_OUTPUT"
+
+    - name: Send via bot token
+      if: inputs.bot-token != ''
+      uses: slackapi/slack-github-action@v2.0.0
+      with:
+        method: chat.postMessage
+        token: ${{ inputs.bot-token }}
+        payload: |
+          channel: "${{ inputs.channel }}"
+          blocks:
+            - type: header
+              text:
+                type: plain_text
+                text: "${{ steps.header.outputs.text }}"
+            - type: section
+              text:
+                type: mrkdwn
+                text: ${{ toJSON(inputs.message) }}
+            - type: section
+              fields:
+                - type: mrkdwn
+                  text: "*Repository:*\n${{ github.repository }}"
+                - type: mrkdwn
+                  text: "*Branch:*\n${{ github.ref_name }}"
+            - type: actions
+              elements:
+                - type: button
+                  text:
+                    type: plain_text
+                    text: "View Run"
+                  url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+    - name: Send via webhook
+      if: inputs.webhook-url != ''
+      uses: slackapi/slack-github-action@v2.0.0
+      with:
+        webhook: ${{ inputs.webhook-url }}
+        webhook-type: incoming-webhook
+        payload: |
+          blocks:
+            - type: header
+              text:
+                type: plain_text
+                text: "${{ steps.header.outputs.text }}"
+            - type: section
+              text:
+                type: mrkdwn
+                text: ${{ toJSON(inputs.message) }}
+            - type: section
+              fields:
+                - type: mrkdwn
+                  text: "*Repository:*\n${{ github.repository }}"
+                - type: mrkdwn
+                  text: "*Branch:*\n${{ github.ref_name }}"
+            - type: actions
+              elements:
+                - type: button
+                  text:
+                    type: plain_text
+                    text: "View Run"
+                  url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
