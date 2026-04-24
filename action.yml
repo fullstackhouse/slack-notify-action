@@ -26,6 +26,10 @@ inputs:
     description: One of "success", "failure", "info" (default). Controls header emoji.
     required: false
     default: info
+  fields:
+    description: Optional JSON array of extra Slack field objects (e.g. `[{"type":"mrkdwn","text":"*Region:*\nEU"}]`). Rendered after the default Repository/Branch fields.
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -50,19 +54,66 @@ runs:
           exit 1
         fi
 
-    - name: Compute header
-      id: header
+    - name: Build payload
+      id: payload
       shell: bash
       env:
-        STATUS: ${{ inputs.status }}
         TITLE: ${{ inputs.title }}
+        MESSAGE: ${{ inputs.message }}
+        STATUS: ${{ inputs.status }}
+        EXTRA_FIELDS: ${{ inputs.fields }}
+        CHANNEL: ${{ inputs.channel }}
+        REPO: ${{ github.repository }}
+        BRANCH: ${{ github.ref_name }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: |
         case "$STATUS" in
           success) emoji="✅" ;;
           failure) emoji="❌" ;;
           *)       emoji="ℹ️" ;;
         esac
-        echo "text=${emoji} ${TITLE}" >> "$GITHUB_OUTPUT"
+        header="${emoji} ${TITLE}"
+
+        payload_file="${RUNNER_TEMP}/slack-notify-payload.json"
+
+        jq -n \
+          --arg channel "$CHANNEL" \
+          --arg header "$header" \
+          --arg message "$MESSAGE" \
+          --arg repo "$REPO" \
+          --arg branch "$BRANCH" \
+          --arg run_url "$RUN_URL" \
+          --argjson extra_fields "${EXTRA_FIELDS:-[]}" \
+          '
+          def default_fields: [
+            {type: "mrkdwn", text: ("*Repository:*\n" + $repo)},
+            {type: "mrkdwn", text: ("*Branch:*\n" + $branch)}
+          ];
+
+          def blocks:
+            [
+              {type: "header", text: {type: "plain_text", text: $header}},
+              {type: "section", text: {type: "mrkdwn", text: $message}},
+              {type: "section", fields: default_fields}
+            ]
+            + (if ($extra_fields | length) > 0 then [{type: "section", fields: $extra_fields}] else [] end)
+            + [{
+                type: "actions",
+                elements: [{
+                  type: "button",
+                  text: {type: "plain_text", text: "View Run"},
+                  url: $run_url
+                }]
+              }];
+
+          if $channel != "" then
+            {channel: $channel, text: $header, blocks: blocks}
+          else
+            {text: $header, blocks: blocks}
+          end
+          ' > "$payload_file"
+
+        echo "file=$payload_file" >> "$GITHUB_OUTPUT"
 
     - name: Send via bot token
       if: inputs.bot-token != ''
@@ -70,30 +121,7 @@ runs:
       with:
         method: chat.postMessage
         token: ${{ inputs.bot-token }}
-        payload: |
-          channel: "${{ inputs.channel }}"
-          blocks:
-            - type: header
-              text:
-                type: plain_text
-                text: "${{ steps.header.outputs.text }}"
-            - type: section
-              text:
-                type: mrkdwn
-                text: ${{ toJSON(inputs.message) }}
-            - type: section
-              fields:
-                - type: mrkdwn
-                  text: "*Repository:*\n${{ github.repository }}"
-                - type: mrkdwn
-                  text: "*Branch:*\n${{ github.ref_name }}"
-            - type: actions
-              elements:
-                - type: button
-                  text:
-                    type: plain_text
-                    text: "View Run"
-                  url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        payload-file-path: ${{ steps.payload.outputs.file }}
 
     - name: Send via webhook
       if: inputs.webhook-url != ''
@@ -101,26 +129,4 @@ runs:
       with:
         webhook: ${{ inputs.webhook-url }}
         webhook-type: incoming-webhook
-        payload: |
-          blocks:
-            - type: header
-              text:
-                type: plain_text
-                text: "${{ steps.header.outputs.text }}"
-            - type: section
-              text:
-                type: mrkdwn
-                text: ${{ toJSON(inputs.message) }}
-            - type: section
-              fields:
-                - type: mrkdwn
-                  text: "*Repository:*\n${{ github.repository }}"
-                - type: mrkdwn
-                  text: "*Branch:*\n${{ github.ref_name }}"
-            - type: actions
-              elements:
-                - type: button
-                  text:
-                    type: plain_text
-                    text: "View Run"
-                  url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        payload-file-path: ${{ steps.payload.outputs.file }}

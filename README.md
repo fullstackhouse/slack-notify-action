@@ -71,6 +71,7 @@ jobs:
 | `channel`     | with `bot-token` | | Slack channel (e.g. `#alerts`). Required when using `bot-token`; ignored for `webhook-url`. |
 | `title`       | yes      |         | Header text. |
 | `message`     | yes      |         | Body (Slack mrkdwn). |
+| `fields`      | no       |         | Optional JSON array of extra Slack field objects appended after the default Repository/Branch block, e.g. `[{"type":"mrkdwn","text":"*Region:*\nEU"}]`. |
 | `status`      | no       | `info`  | `success` \| `failure` \| `info`. Picks the header emoji. |
 
 The Slack message automatically includes the repository, branch, and a "View Run" button linking to the triggering workflow run — no extra inputs needed.
