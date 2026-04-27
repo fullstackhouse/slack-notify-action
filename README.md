@@ -13,6 +13,7 @@ This action is a thin wrapper around `slackapi/slack-github-action` that:
 - Supports **both bot tokens and incoming webhooks**.
 - Produces a consistent layout: title header, mrkdwn body, `Repository` / `Branch` fields, and a "View Run" button.
 - Adds a status emoji (✅ / ❌ / ℹ️) based on a simple `status` input.
+- Prefixes the header (and mobile push notification text) with the repo name so context is visible at a glance.
 
 ## Usage
 

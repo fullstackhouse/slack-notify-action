@@ -72,7 +72,7 @@ runs:
           failure) emoji="❌" ;;
           *)       emoji="ℹ️" ;;
         esac
-        header="${emoji} ${TITLE}"
+        header="${emoji} [${REPO}] ${TITLE}"
 
         payload_file="${RUNNER_TEMP}/slack-notify-payload.json"
 
